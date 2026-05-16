@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>67 Aura - Ultimate Masterpiece V8.5</title>
+    <title>67 Aura - Ultimate Masterpiece V9</title>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -63,8 +63,8 @@
             animation: shake 0.1s infinite;
         }
         @keyframes shake {
-            0% { transform: translate(-50.5%, -49.5%) rotate(-0.5deg); }
-            100% { transform: translate(-49.5%, -50.5%) rotate(0.5deg); }
+            0% { transform: translate(-2px, 1px) rotate(-0.5deg); }
+            100% { transform: translate(2px, -1px) rotate(0.5deg); }
         }
         .loader {
             width: 12px;
@@ -95,6 +95,16 @@
             {enabled ? <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/> : <g><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></g>}
         </svg>
     );
+    const localAuraLines = [
+        "Digga, die Aura lädt brutal.",
+        "67 Energie, komplett wild.",
+        "Das ist kein Klick, das ist Rizz.",
+        "Aura steigt, cringe fällt.",
+        "Stabiler Move, ehrlich sus gut.",
+        "Du kochst gerade anders, digga.",
+        "Fast Boiler, die Zahlen schwitzen.",
+        "Macher-Modus aktiv, 67 certified."
+    ];
 
     const App = () => {
         const containerRef = useRef(null);
@@ -108,6 +118,30 @@
 
         const [apiKey, setApiKey] = useState(() => localStorage.getItem("gemini_aura_key") || "");
         const [showKeyPrompt, setShowKeyPrompt] = useState(!localStorage.getItem("gemini_aura_key"));
+        const voiceRef = useRef(null);
+        const bridgeRequestId = useRef(0);
+
+        useEffect(() => {
+            const pickVoice = () => {
+                const voices = window.speechSynthesis?.getVoices?.() || [];
+                voiceRef.current =
+                    voices.find(v => /^de/i.test(v.lang) && /natural|online|neural|google|conrad|katja/i.test(v.name)) ||
+                    voices.find(v => /^de/i.test(v.lang)) ||
+                    voices[0] ||
+                    null;
+            };
+
+            pickVoice();
+            if (window.speechSynthesis) {
+                window.speechSynthesis.onvoiceschanged = pickVoice;
+            }
+
+            return () => {
+                if (window.speechSynthesis?.onvoiceschanged === pickVoice) {
+                    window.speechSynthesis.onvoiceschanged = null;
+                }
+            };
+        }, []);
 
         const speak = (text) => {
             if (!audioEnabled || !text) return;
@@ -115,8 +149,9 @@
                 window.speechSynthesis.cancel();
                 const utterance = new SpeechSynthesisUtterance(text);
                 utterance.lang = 'de-DE';
-                utterance.pitch = 0.8;
-                utterance.rate = 1.0;
+                if (voiceRef.current) utterance.voice = voiceRef.current;
+                utterance.pitch = 1.08;
+                utterance.rate = 1.12;
                 window.speechSynthesis.speak(utterance);
             } catch (e) { console.error(e); }
         };
@@ -124,14 +159,21 @@
         const listModels = async () => {
             if (!apiKey) return;
             setLoading(true);
+            setErrorMessage("");
             try {
                 const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+                if (!res.ok) {
+                    const errData = await res.json().catch(() => ({}));
+                    throw new Error(errData.error?.message || `HTTP ${res.status}`);
+                }
                 const data = await res.json();
                 if (data.models) {
                     const names = data.models
                         .filter(m => m.supportedGenerationMethods.includes("generateContent"))
                         .map(m => m.name.replace("models/", ""));
                     setErrorMessage(`Verfügbare Modelle: ${names.slice(0,5).join(", ")}`);
+                } else {
+                    throw new Error("Keine Modelle gefunden.");
                 }
             } catch (e) { setErrorMessage(`Fehler: ${e.message}`); }
             setLoading(false);
@@ -139,7 +181,9 @@
 
         const callBridge = async (current) => {
             if (!apiKey) return;
+            const requestId = ++bridgeRequestId.current;
             setLoading(true);
+            setErrorMessage("");
             try {
                 const modelName = "gemini-2.5-flash";
                 const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
@@ -148,22 +192,34 @@
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        contents: [{ parts: [{ text: `Aura Check: ${current}. Antworte NUR im JSON Format: {"status":"OK", "rank":"Macher", "comment":"Kurzer witziger Spruch auf Deutsch"}` }] }],
+                        contents: [{ parts: [{ text: `Aura Check: ${current}/67. Antworte NUR als JSON ohne Markdown: {"status":"OK","rank":"Macher","comment":"maximal 10 Wörter, witzige deutsche Jugendsprache mit Begriffen wie digga, aura, 67, wild, cringe, rizz, sus. Nicht beleidigend."}` }] }],
                         generationConfig: { responseMimeType: "application/json" }
                     })
                 });
 
-                if (response.ok) {
-                    const result = await response.json();
-                    const text = result.candidates[0].content.parts[0].text;
-                    const data = JSON.parse(text);
-                    setBridgeData(data);
-                    speak(data.comment);
+                if (!response.ok) {
+                    const errData = await response.json().catch(() => ({}));
+                    throw new Error(errData.error?.message || `HTTP ${response.status}`);
                 }
+
+                const result = await response.json();
+                const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (!text) throw new Error("Leere Gemini-Antwort.");
+
+                const data = JSON.parse(text.replace(/^```json|```$/g, "").trim());
+                if (requestId !== bridgeRequestId.current) return;
+                setBridgeData({
+                    status: data.status || "OK",
+                    rank: data.rank || "Macher",
+                    comment: data.comment || "Digga, stabile 67 Aura!"
+                });
+                speak(data.comment);
             } catch (e) { 
                 setBridgeData({status: "FAIL", rank: "N/A", comment: "Cloud Offline"}); 
+                setErrorMessage(`Fehler: ${e.message}`);
+            } finally {
+                if (requestId === bridgeRequestId.current) setLoading(false);
             }
-            setLoading(false);
         };
 
         // --- 3D ENGINE ---
@@ -171,6 +227,12 @@
         const b6Ref = useRef(null);
         const b7Ref = useRef(null);
         const animId = useRef(null);
+        const rendererRef = useRef(null);
+        const isBoilingRef = useRef(false);
+
+        useEffect(() => {
+            isBoilingRef.current = isBoiling;
+        }, [isBoiling]);
 
         useEffect(() => {
             if (!containerRef.current) return;
@@ -189,6 +251,7 @@
                 const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true });
                 renderer.setSize(width, height);
                 containerRef.current.appendChild(renderer.domElement);
+                rendererRef.current = renderer;
 
                 scene.add(new THREE.AmbientLight(0xffffff, 1.2));
                 const sun = new THREE.DirectionalLight(0xffffff, 1.0);
@@ -262,7 +325,9 @@
                 const animate = () => {
                     const t = Date.now() * 0.002;
                     animId.current = requestAnimationFrame(animate);
-                    if (lobsterGroup.current && !isBoiling) {
+                    if (lobsterGroup.current && !isBoilingRef.current) {
+                        camera.position.x = 0;
+                        lobsterGroup.current.rotation.y = Math.sin(t) * 0.08;
                         lobsterGroup.current.position.y = Math.sin(t * 3.5) * 0.2 - 0.8;
                         const spd = 2.8;
                         const jX = Math.sin(t * spd) * 4.5;
@@ -271,7 +336,7 @@
                         b7Ref.current.position.set(-jX, Math.abs(Math.cos(t * spd + Math.PI)) * 5.5 + 2, 3);
                         lobsterGroup.current.armL.rotation.x = Math.sin(t * spd) * 0.9;
                         lobsterGroup.current.armR.rotation.x = Math.sin(t * spd + Math.PI) * 0.9;
-                    } else if (isBoiling) {
+                    } else if (lobsterGroup.current && isBoilingRef.current) {
                         camera.position.x = (Math.random() - 0.5) * 0.6;
                         lobsterGroup.current.rotation.y += 0.15;
                     }
@@ -284,13 +349,29 @@
             return () => {
                 clearTimeout(timer);
                 if (animId.current) cancelAnimationFrame(animId.current);
+                if (rendererRef.current) {
+                    rendererRef.current.dispose();
+                    rendererRef.current = null;
+                }
+                if (containerRef.current) containerRef.current.innerHTML = '';
             };
-        }, [isBoiling]);
+        }, []);
 
         const handleAction = () => {
             if (isBoiling || showKeyPrompt) return;
             const next = count + 1; setCount(next); setAuraPoints(p => p + 67);
-            if (next === 1 || next % 10 === 0 || next === 67) callBridge(next);
+            const localComment = localAuraLines[next % localAuraLines.length];
+            setBridgeData(d => ({
+                ...d,
+                status: "LOCAL",
+                rank: next >= 64 ? "Aura Boss" : "Macher",
+                comment: localComment
+            }));
+            if (next === 1 || next % 10 === 0 || next === 67) {
+                callBridge(next);
+            } else if (next % 5 === 0) {
+                speak(localComment);
+            }
             if (next === 67) {
                 setIsBoiling(true);
                 setTimeout(() => { setCount(0); setIsBoiling(false); setAuraPoints(0); }, 7000);
@@ -298,8 +379,13 @@
         };
 
         const saveKey = (key) => {
-            localStorage.setItem("gemini_aura_key", key);
-            setApiKey(key); setShowKeyPrompt(false);
+            const trimmedKey = key.trim();
+            if (!trimmedKey) {
+                setErrorMessage("Bitte erst einen Gemini API Key einfügen.");
+                return;
+            }
+            localStorage.setItem("gemini_aura_key", trimmedKey);
+            setApiKey(trimmedKey); setShowKeyPrompt(false);
             window.location.reload();
         };
 
@@ -318,7 +404,7 @@
 
                 <div className="mb-6 text-center select-none">
                     <h1 className="text-orange-500 text-3xl font-black tracking-widest uppercase">67 Aura Master</h1>
-                    <p className="text-[10px] opacity-40 uppercase">Voxel Engine V8.5 - Engine Stabilität: OK</p>
+                    <p className="text-[10px] opacity-40 uppercase">Voxel Engine V9 - Voice Aura: OK</p>
                 </div>
 
                 <div className="lilygo-case">
@@ -329,12 +415,12 @@
                             <div className="flex justify-between items-start">
                                 <div className="bg-black/60 p-2 border-b-2 border-r-2 border-zinc-700 text-[8px] max-w-[130px] backdrop-blur-sm">
                                     <div className="text-green-400 font-bold mb-1 tracking-tighter uppercase flex items-center gap-1">
-                                        BRIDGE_V8.5 {loading && <span className="loader ml-1"></span>}
+                                        BRIDGE_V9 {loading && <span className="loader ml-1"></span>}
                                     </div>
                                     <pre className="text-blue-300 overflow-hidden">{JSON.stringify(bridgeData, null, 1)}</pre>
                                 </div>
                                 <div className="text-right">
-                                    <div className={`text-6xl font-black drop-shadow-[5px_5px_0_#000] ${count >= 64 ? 'text-red-500 animate-pulse' : 'text-white'}`}>{count} / 64</div>
+                                    <div className={`text-6xl font-black drop-shadow-[5px_5px_0_#000] ${count >= 64 ? 'text-red-500 animate-pulse' : 'text-white'}`}>{count} / 67</div>
                                     <div className="text-yellow-400 font-bold text-lg tracking-widest drop-shadow-[2px_2px_0_#000]">AURA: {auraPoints.toLocaleString()}</div>
                                 </div>
                             </div>
