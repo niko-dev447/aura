@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>67 Aura - Ultimate Masterpiece</title>
-    <!-- Diese Scripte erlauben es React und 3D direkt im Browser ohne Installation zu nutzen -->
+    <!-- Bibliotheken: React, Three.js und Tailwind CSS -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -76,6 +76,7 @@
 <script type="text/babel">
     const { useState, useEffect, useRef } = React;
 
+    // UI Icons
     const ZapIcon = () => (
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="yellow" strokeWidth="2">
             <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
@@ -106,65 +107,65 @@
         const [audioEnabled, setAudioEnabled] = useState(false);
         const [errorMessage, setErrorMessage] = useState("");
         
-        // Key-Management: Schaut ob ein Key im Browser gespeichert ist
+        // Key-Management (LocalStorage)
         const [apiKey, setApiKey] = useState(() => localStorage.getItem("gemini_aura_key") || "");
         const [keyInput, setKeyInput] = useState("");
         const [showKeyModal, setShowKeyModal] = useState(!localStorage.getItem("gemini_aura_key"));
 
-        // Retry-Logik für API Calls
-        const fetchWithRetry = async (url, options, retries = 5, backoff = 1000) => {
+        // Sprachausgabe (Browser-Native TTS)
+        const speak = (text) => {
+            if (!audioEnabled || !text) return;
+            window.speechSynthesis.cancel();
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = 'de-DE';
+            utterance.pitch = 0.75;
+            utterance.rate = 1.0;
+            window.speechSynthesis.speak(utterance);
+        };
+
+        // Cloud Bridge API Call
+        const callBridge = async (current) => {
+            if (loading || !apiKey) return;
+            setLoading(true);
+            setErrorMessage("");
             try {
-                const response = await fetch(url, options);
-                if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
-                return await response.json();
-            } catch (error) {
-                if (retries > 0) {
-                    await new Promise(resolve => setTimeout(resolve, backoff));
-                    return fetchWithRetry(url, options, retries - 1, backoff * 2);
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+                
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ 
+                            parts: [{ 
+                                text: `Du bist eine Cloud-Bridge für ein Minecraft-Spiel. Der aktuelle Counter steht auf ${current}. Aura-Punkte: ${auraPoints}. 
+                                Antworte AUSSCHLIESSLICH mit diesem JSON-Format: {"status":"OK","rank":"DEIN_RANG","comment":"DEIN_SPRUCH"}. 
+                                Thema: 67 Aura, Macher, Krabben-Vibe.` 
+                            }] 
+                        }]
+                    })
+                });
+
+                if (!response.ok) {
+                    const errBody = await response.json();
+                    throw new Error(errBody.error?.message || `API Fehler ${response.status}`);
                 }
-                throw error;
+
+                const resData = await response.json();
+                const textResponse = resData.candidates[0].content.parts[0].text;
+                const cleanJson = textResponse.replace(/```json|```/g, "").trim();
+                const data = JSON.parse(cleanJson);
+                
+                setBridgeData(data);
+                speak(data.comment);
+            } catch (e) { 
+                console.error("Cloud Bridge Error:", e);
+                setBridgeData({status: "ERR", rank: "N/A", comment: "Cloud Offline"});
+                setErrorMessage(e.message);
             }
+            setLoading(false);
         };
 
-        const pcmToWav = (pcmData, sampleRate) => {
-            const buffer = new ArrayBuffer(44 + pcmData.length);
-            const view = new DataView(buffer);
-            const writeString = (offset, string) => {
-                for (let i = 0; i < string.length; i++) view.setUint8(offset + i, string.charCodeAt(i));
-            };
-            writeString(0, 'RIFF'); view.setUint32(4, 32 + pcmData.length, true);
-            writeString(8, 'WAVE'); writeString(12, 'fmt ');
-            view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
-            view.setUint32(24, sampleRate, true); view.setUint32(28, sampleRate * 2, true);
-            view.setUint16(32, 2, true); view.setUint16(34, 16, true);
-            writeString(36, 'data'); view.setUint32(40, pcmData.length, true);
-            new Uint8Array(buffer, 44).set(new Uint8Array(pcmData));
-            return new Blob([buffer], { type: 'audio/wav' });
-        };
-
-        const speak = async (text) => {
-            if (!audioEnabled || !text || !apiKey) return;
-            try {
-                const result = await fetchWithRetry(
-                    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`,
-                    {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            contents: [{ parts: [{ text: `Sprich als cooler Minecraft-Charakter: ${text}` }] }],
-                            generationConfig: {
-                                responseModalities: ["AUDIO"],
-                                speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Puck" } } }
-                            }
-                        })
-                    }
-                );
-                const inlineData = result.candidates[0].content.parts[0].inlineData;
-                const audioUrl = URL.createObjectURL(pcmToWav(Uint8Array.from(atob(inlineData.data), c => c.charCodeAt(0)), parseInt(inlineData.mimeType.split('rate=')[1]) || 24000));
-                await new Audio(audioUrl).play();
-            } catch (e) { console.error(e); }
-        };
-
+        // --- 3D ENGINE ---
         const lobsterGroup = useRef(null);
         const b6Ref = useRef(null);
         const b7Ref = useRef(null);
@@ -189,7 +190,7 @@
                 const sun = new THREE.DirectionalLight(0xffffff, 1.0);
                 sun.position.set(10, 20, 15); scene.add(sun);
 
-                // Boden
+                // Grass Boden
                 const cubeGeo = new THREE.BoxGeometry(1, 1, 1);
                 for (let x = -10; x <= 10; x++) {
                     for (let z = -6; z <= 6; z++) {
@@ -199,7 +200,7 @@
                     }
                 }
 
-                // LOBSTER
+                // VOXEL LOBSTER
                 const lobster = new THREE.Group();
                 const red = new THREE.MeshLambertMaterial({ color: 0xe63946 });
                 const darkRed = new THREE.MeshLambertMaterial({ color: 0x9b2226 });
@@ -271,28 +272,6 @@
             return () => { clearTimeout(timer); if(rendererRef.current) rendererRef.current.dispose(); };
         }, [isBoiling]);
 
-        const callBridge = async (current) => {
-            if (loading || !apiKey) return;
-            setLoading(true); setErrorMessage("");
-            try {
-                const result = await fetchWithRetry(
-                    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`,
-                    {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            contents: [{ parts: [{ text: `Aura Check: ${current}. Antworte NUR JSON: {status:string, rank:string, comment:string}` }] }],
-                            systemInstruction: { parts: [{ text: "Du bist eine Snapy-Cloud-Bridge. Antworte nur in validem JSON." }] },
-                            generationConfig: { responseMimeType: "application/json" }
-                        })
-                    }
-                );
-                const data = JSON.parse(result.candidates[0].content.parts[0].text);
-                setBridgeData(data); speak(data.comment);
-            } catch (e) { setErrorMessage("API Verbindung fehlgeschlagen."); }
-            setLoading(false);
-        };
-
         const handleAction = () => {
             if (isBoiling || showKeyModal) return;
             const next = count + 1; setCount(next); setAuraPoints(p => p + 67);
@@ -314,13 +293,13 @@
         return (
             <div className="flex flex-col items-center relative">
                 {showKeyModal && (
-                    <div className="absolute inset-0 bg-black/90 z-[200] flex flex-col items-center justify-center p-6 rounded-[40px] border-4 border-zinc-700">
+                    <div className="absolute inset-0 bg-black/95 z-[200] flex flex-col items-center justify-center p-6 rounded-[40px] border-4 border-zinc-700">
                         <div className="bg-zinc-900 p-6 border-4 border-black max-w-sm text-center shadow-[8px_8px_0_#000]">
-                            <h2 className="text-orange-500 font-bold mb-2 text-lg">API KEY BENÖTIGT</h2>
-                            <p className="text-[10px] text-zinc-400 mb-4">Dein Key wird nur lokal in deinem Browser gespeichert und niemals an GitHub gesendet.</p>
+                            <h2 className="text-orange-500 font-bold mb-2 text-lg uppercase">API Key Aktivieren</h2>
+                            <p className="text-[10px] text-zinc-400 mb-4">Füge deinen Gemini API Key ein. Er wird nur lokal im Browser gespeichert.</p>
                             <input type="password" placeholder="AIzaSy..." value={keyInput} onChange={(e) => setKeyInput(e.target.value)}
                                 className="w-full bg-black border-2 border-zinc-700 p-2 text-xs text-green-400 mb-4 focus:outline-none focus:border-green-500 font-sans" />
-                            <button onClick={saveKey} className="bg-green-600 px-4 py-2 text-xs font-bold hover:bg-green-500 border-2 border-black active:translate-y-1">KEY SPEICHERN</button>
+                            <button onClick={saveKey} className="bg-green-600 px-6 py-2 text-xs font-bold hover:bg-green-500 border-2 border-black active:translate-y-1">SPEICHERN & START</button>
                         </div>
                     </div>
                 )}
@@ -330,9 +309,9 @@
                         <div ref={containerRef} className="w-full h-full" />
                         <div className="absolute inset-0 pointer-events-none p-5 flex flex-col justify-between z-50">
                             <div className="flex justify-between items-start">
-                                <div className="bg-black/60 p-2 border-b-2 border-r-2 border-zinc-700 text-[8px] max-w-[130px] backdrop-blur-sm">
-                                    <div className="text-green-400 font-bold mb-1">SNAPY_BRIDGE_V3</div>
-                                    <pre className="text-blue-300 overflow-hidden leading-tight">{JSON.stringify(bridgeData, null, 1)}</pre>
+                                <div className="bg-black/60 p-2 border-b-2 border-r-2 border-zinc-700 text-[8px] max-w-[140px] backdrop-blur-sm overflow-hidden">
+                                    <div className="text-green-400 font-bold mb-1 tracking-tighter uppercase">Cloud_Bridge_v4.2</div>
+                                    <pre className="text-blue-300 leading-tight">{JSON.stringify(bridgeData, null, 1)}</pre>
                                 </div>
                                 <div className="text-right">
                                     <div className={`text-6xl font-black drop-shadow-[5px_5px_0_#000] ${count >= 64 ? 'text-red-500 animate-pulse' : 'text-white'}`}>{count} / 64</div>
@@ -341,7 +320,7 @@
                             </div>
                             <div className="flex justify-between items-end">
                                 <div className="bg-black/60 p-3 border-t-2 border-r-2 border-zinc-700 max-w-[250px] backdrop-blur-sm">
-                                    <div className="text-[8px] text-zinc-500 uppercase font-bold italic mb-1">Kommentar:</div>
+                                    <div className="text-[8px] text-zinc-500 uppercase font-bold italic mb-1">Macher_Status:</div>
                                     <p className="text-[12px] text-white italic leading-tight">"{bridgeData.comment}"</p>
                                 </div>
                                 <ZapIcon />
@@ -350,9 +329,16 @@
                         {isBoiling && (
                             <div className="absolute inset-0 bg-orange-600/30 flex items-center justify-center boiler-shake z-[100] backdrop-blur-sm">
                                 <div className="bg-white text-black p-10 border-8 border-black text-center -rotate-6 shadow-[15px_15px_0_#000]">
-                                    <div className="text-6xl font-black text-center">OK BOILER!</div>
-                                    <div className="text-2xl font-bold mt-3 text-center">AURA OVERHEAT 67</div>
+                                    <div className="text-6xl font-black text-center uppercase">Ok Boiler!</div>
+                                    <div className="text-2xl font-bold mt-3 text-center uppercase">Aura Overheat 67</div>
                                 </div>
+                            </div>
+                        )}
+                        {errorMessage && (
+                            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-red-900/95 p-4 border-2 border-red-500 text-[9px] text-center pointer-events-auto max-w-xs z-[150]">
+                                <div className="font-bold mb-1">API FEHLER:</div>
+                                {errorMessage}
+                                <button onClick={(e) => { e.stopPropagation(); setErrorMessage(""); }} className="block mx-auto mt-2 underline uppercase">Schließen</button>
                             </div>
                         )}
                     </div>
@@ -361,11 +347,12 @@
                     <button onClick={() => setAudioEnabled(!audioEnabled)} className={`px-8 py-3 rounded-full font-bold shadow-2xl transition-all flex items-center gap-3 ${audioEnabled ? 'bg-green-600 hover:bg-green-500' : 'bg-red-600 hover:bg-red-500'}`}>
                         <VolumeIcon enabled={audioEnabled} /> {audioEnabled ? 'SOUND AN' : 'SOUND AUS'}
                     </button>
-                    <button onClick={() => { localStorage.removeItem("gemini_aura_key"); window.location.reload(); }} className="px-6 py-3 bg-zinc-800 border border-zinc-700 rounded-full text-[10px] font-bold hover:bg-zinc-700 transition-all">KEY RESET</button>
+                    <button onClick={() => { localStorage.removeItem("gemini_aura_key"); window.location.reload(); }} className="px-6 py-3 bg-zinc-800 border border-zinc-700 rounded-full text-[10px] font-bold hover:bg-zinc-700 transition-all uppercase tracking-widest">Key Reset</button>
                 </div>
             </div>
         );
     };
+
     const root = ReactDOM.createRoot(document.getElementById('root'));
     root.render(<App />);
 </script>
