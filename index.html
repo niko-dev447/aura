@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>67 Aura - Ultimate Masterpiece V8.1</title>
+    <title>67 Aura - Ultimate Masterpiece V8.2</title>
     <!-- Bibliotheken -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -140,7 +140,8 @@
             setLoading(true);
             setErrorMessage("");
             
-            const modelName = "gemini-2.5-flash-preview-09-2025";
+            // Wechsel auf das stabilste Modell für kostenlose AI Studio Keys
+            const modelName = "gemini-1.5-flash";
             const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
             try {
@@ -150,12 +151,9 @@
                     body: JSON.stringify({
                         contents: [{ 
                             parts: [{ 
-                                text: `Analysiere Minecraft Aura: Counter=${current}, Aura=${auraPoints}. Antworte ausschließlich in diesem JSON-Format: {"status":"OK","rank":"Macher","comment":"Kurzer witziger Spruch"}` 
+                                text: `Du bist eine Snapy-Cloud-Bridge. Analysiere Minecraft Aura: Counter=${current}, Aura=${auraPoints}. Antworte ausschließlich in diesem JSON-Format: {"status":"OK","rank":"Macher","comment":"Kurzer witziger Spruch"}` 
                             }] 
                         }],
-                        systemInstruction: {
-                            parts: [{ text: "Du bist eine Snapy-Cloud-Bridge. Antworte nur in validem JSON ohne Markdown-Formatierung." }]
-                        },
                         generationConfig: { 
                             responseMimeType: "application/json" 
                         }
@@ -172,7 +170,6 @@
                 
                 if (!text) throw new Error("Keine Antwort von der KI erhalten.");
 
-                // Regex zur Bereinigung, falls die KI trotz Anweisung Markdown (```json) mitsendet
                 const cleanJson = text.replace(/```json|```/gi, "").trim();
                 const data = JSON.parse(cleanJson);
                 
@@ -332,13 +329,13 @@
                             <div className="flex justify-between items-start">
                                 <div className="bg-black/60 p-2 border-b-2 border-r-2 border-zinc-700 text-[8px] max-w-[140px] backdrop-blur-sm overflow-hidden">
                                     <div className="text-green-400 font-bold mb-1 uppercase flex items-center gap-1">
-                                        BRIDGE_V8.1 {loading && <span className="loader ml-1"></span>}
+                                        BRIDGE_V8.2 {loading && <span className="loader ml-1"></span>}
                                     </div>
                                     <pre className="text-blue-300 leading-tight">{JSON.stringify(bridgeData, null, 1)}</pre>
                                 </div>
                                 <div className="text-right">
                                     <div className={`text-6xl font-black drop-shadow-[5px_5px_0_#000] ${count >= 64 ? 'text-red-500 animate-pulse' : 'text-white'}`}>{count} / 64</div>
-                                    <div className="text-yellow-400 font-bold text-lg tracking-widest drop-shadow-[2px_2px_0_#000]">AURA: {auraPoints.toLocaleString()}</div>
+                                    <div className="text-yellow-400 font-bold text-sm mt-1">AURA: {auraPoints.toLocaleString()}</div>
                                 </div>
                             </div>
                             <div className="flex justify-between items-end">
