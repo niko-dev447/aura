@@ -129,8 +129,8 @@
             setLoading(true);
             setErrorMessage("");
             try {
-                // Nutzung des unterstützten Modells gemini-2.5-flash-preview-09-2025
-                const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+                // Nutzung des stabilen Standard-Modells gemini-1.5-flash
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
                 
                 const response = await fetch(url, {
                     method: 'POST',
@@ -142,10 +142,7 @@
                                 Antworte AUSSCHLIESSLICH mit diesem JSON-Format (kein Markdown): {"status":"OK","rank":"DEIN_RANG","comment":"DEIN_SPRUCH"}. 
                                 Thema: 67 Aura, Macher, Krabben-Vibe.` 
                             }] 
-                        }],
-                        generationConfig: {
-                            responseMimeType: "application/json"
-                        }
+                        }]
                     })
                 });
 
@@ -156,6 +153,7 @@
 
                 const resData = await response.json();
                 const textResponse = resData.candidates[0].content.parts[0].text;
+                // Säuberung falls die KI doch Markdown-Blöcke schickt
                 const cleanJson = textResponse.replace(/```json|```/g, "").trim();
                 const data = JSON.parse(cleanJson);
                 
@@ -314,7 +312,7 @@
                         <div className="absolute inset-0 pointer-events-none p-5 flex flex-col justify-between z-50">
                             <div className="flex justify-between items-start">
                                 <div className="bg-black/60 p-2 border-b-2 border-r-2 border-zinc-700 text-[8px] max-w-[130px] backdrop-blur-sm overflow-hidden">
-                                    <div className="text-green-400 font-bold mb-1 tracking-tighter uppercase">Cloud_Bridge_v4.3</div>
+                                    <div className="text-green-400 font-bold mb-1 tracking-tighter uppercase">Cloud_Bridge_v4.4</div>
                                     <pre className="text-blue-300 leading-tight">{JSON.stringify(bridgeData, null, 1)}</pre>
                                 </div>
                                 <div className="text-right">
