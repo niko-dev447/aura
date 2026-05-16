@@ -67,6 +67,20 @@
             0% { transform: translate(-50.5%, -49.5%) rotate(-0.5deg); }
             100% { transform: translate(-49.5%, -50.5%) rotate(0.5deg); }
         }
+        /* Loading Spinner */
+        .loader {
+            width: 12px;
+            height: 12px;
+            border: 2px solid #fff;
+            border-bottom-color: transparent;
+            border-radius: 50%;
+            display: inline-block;
+            animation: rotation 1s linear infinite;
+        }
+        @keyframes rotation {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body>
@@ -76,7 +90,6 @@
 <script type="text/babel">
     const { useState, useEffect, useRef } = React;
 
-    // UI Icons
     const ZapIcon = () => (
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="yellow" strokeWidth="2">
             <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
@@ -107,7 +120,6 @@
         const [audioEnabled, setAudioEnabled] = useState(false);
         const [errorMessage, setErrorMessage] = useState("");
         
-        // Key-Management (LocalStorage)
         const [apiKey, setApiKey] = useState(() => localStorage.getItem("gemini_aura_key") || "");
         const [keyInput, setKeyInput] = useState("");
         const [showKeyModal, setShowKeyModal] = useState(!localStorage.getItem("gemini_aura_key"));
@@ -115,72 +127,58 @@
         // Sprachausgabe (Browser-Native TTS)
         const speak = (text) => {
             if (!audioEnabled || !text) return;
-            window.speechSynthesis.cancel();
-            const utterance = new SpeechSynthesisUtterance(text);
-            utterance.lang = 'de-DE';
-            utterance.pitch = 0.75;
-            utterance.rate = 1.0;
-            window.speechSynthesis.speak(utterance);
-        };
-
-        // Cloud Bridge API Call mit Exponential Backoff
-        const fetchWithRetry = async (url, options, retries = 5, backoff = 1000) => {
             try {
-                const response = await fetch(url, options);
-                if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
-                return await response.json();
-            } catch (error) {
-                if (retries > 0) {
-                    await new Promise(resolve => setTimeout(resolve, backoff));
-                    return fetchWithRetry(url, options, retries - 1, backoff * 2);
-                }
-                throw error;
+                window.speechSynthesis.cancel();
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.lang = 'de-DE';
+                utterance.pitch = 0.8;
+                utterance.rate = 1.0;
+                window.speechSynthesis.speak(utterance);
+            } catch (e) {
+                console.error("Sprachausgabe fehlgeschlagen:", e);
             }
         };
 
         const callBridge = async (current) => {
-            if (loading || !apiKey) return;
+            if (!apiKey) return;
             setLoading(true);
             setErrorMessage("");
             try {
-                // Nutzung des unterstützten Modells gemini-2.5-flash-preview-09-2025
-                const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+                // Nutzung des Standardmodells für maximale Kompatibilität
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
                 
-                const payload = {
-                    contents: [{ 
-                        parts: [{ 
-                            text: `Du bist eine Cloud-Bridge für ein Minecraft-Spiel. Der aktuelle Counter steht auf ${current}. Aura-Punkte: ${auraPoints}. 
-                            Antworte AUSSCHLIESSLICH mit diesem JSON-Format (kein Markdown): {"status":"OK","rank":"DEIN_RANG","comment":"DEIN_SPRUCH"}. 
-                            Thema: 67 Aura, Macher, Krabben-Vibe.` 
-                        }] 
-                    }],
-                    systemInstruction: {
-                        parts: [{ text: "Du bist eine Snapy-Cloud-Bridge. Antworte nur in validem JSON." }]
-                    },
-                    generationConfig: { 
-                        responseMimeType: "application/json"
-                    }
-                };
-
-                const result = await fetchWithRetry(url, {
+                const response = await fetch(url, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
+                    body: JSON.stringify({
+                        contents: [{ 
+                            parts: [{ 
+                                text: `Aura Check: Counter=${current}. Antworte NUR im JSON Format: {"status":"OK","rank":"Macher","comment":"Kurzer witziger Spruch"}` 
+                            }] 
+                        }],
+                        generationConfig: { 
+                            responseMimeType: "application/json"
+                        }
+                    })
                 });
 
+                if (!response.ok) {
+                    const err = await response.json();
+                    throw new Error(err.error?.message || "Cloud Verbindung fehlgeschlagen");
+                }
+
+                const result = await response.json();
                 const textResponse = result.candidates[0].content.parts[0].text;
-                // Säuberung falls die KI doch Markdown-Blöcke schickt
-                const cleanJson = textResponse.replace(/```json|```/g, "").trim();
-                const data = JSON.parse(cleanJson);
+                const data = JSON.parse(textResponse);
                 
                 setBridgeData(data);
                 speak(data.comment);
             } catch (e) { 
                 console.error("Cloud Bridge Error:", e);
-                setBridgeData({status: "ERR", rank: "N/A", comment: "Cloud Offline"});
-                setErrorMessage(e.message);
+                setBridgeData({status: "OFFLINE", rank: "N/A", comment: "Cloud konnte nicht erreicht werden."});
+            } finally {
+                setLoading(false);
             }
-            setLoading(false);
         };
 
         // --- 3D ENGINE ---
@@ -208,7 +206,6 @@
                 const sun = new THREE.DirectionalLight(0xffffff, 1.0);
                 sun.position.set(10, 20, 15); scene.add(sun);
 
-                // Grass Boden
                 const cubeGeo = new THREE.BoxGeometry(1, 1, 1);
                 for (let x = -10; x <= 10; x++) {
                     for (let z = -6; z <= 6; z++) {
@@ -218,7 +215,6 @@
                     }
                 }
 
-                // VOXEL LOBSTER
                 const lobster = new THREE.Group();
                 const red = new THREE.MeshLambertMaterial({ color: 0xe63946 });
                 const darkRed = new THREE.MeshLambertMaterial({ color: 0x9b2226 });
@@ -273,7 +269,9 @@
                         const jX = Math.sin(t * spd) * 4.8;
                         const jY = Math.abs(Math.cos(t * spd)) * 6.0 + 2;
                         b6Ref.current.position.set(jX, jY, 3);
+                        b6Ref.current.rotation.x += 0.05;
                         b7Ref.current.position.set(-jX, Math.abs(Math.cos(t * spd + Math.PI)) * 6.0 + 2, 3);
+                        b7Ref.current.rotation.y += 0.05;
                         lobsterGroup.current.armL.rotation.x = Math.sin(t * spd) * 0.9;
                         lobsterGroup.current.armR.rotation.x = Math.sin(t * spd + Math.PI) * 0.9;
                         const eyeX = Math.sin(t * spd) * 0.25;
@@ -293,10 +291,17 @@
         const handleAction = () => {
             if (isBoiling || showKeyModal) return;
             const next = count + 1; setCount(next); setAuraPoints(p => p + 67);
+            // Cloud Bridge nur bei bestimmten Meilensteinen rufen
             if (next === 1 || next % 10 === 0 || next === 67) callBridge(next);
+            
             if (next === 67) {
                 setIsBoiling(true);
-                setTimeout(() => { setCount(0); setIsBoiling(false); setAuraPoints(0); }, 7000);
+                setTimeout(() => { 
+                    setCount(0); 
+                    setIsBoiling(false); 
+                    setAuraPoints(0); 
+                    setBridgeData({status: "RESET", rank: "Lauch", comment: "Neustart!"});
+                }, 7000);
             }
         };
 
@@ -314,7 +319,7 @@
                     <div className="absolute inset-0 bg-black/95 z-[200] flex flex-col items-center justify-center p-6 rounded-[40px] border-4 border-zinc-700">
                         <div className="bg-zinc-900 p-6 border-4 border-black max-w-sm text-center shadow-[8px_8px_0_#000]">
                             <h2 className="text-orange-500 font-bold mb-2 text-lg uppercase">API Key Aktivieren</h2>
-                            <p className="text-[10px] text-zinc-400 mb-4">Füge deinen Gemini API Key ein. Er wird nur lokal im Browser gespeichert.</p>
+                            <p className="text-[10px] text-zinc-400 mb-4 font-sans leading-tight">Füge deinen Gemini API Key ein. Er wird nur lokal im Browser gespeichert.</p>
                             <input type="password" placeholder="AIzaSy..." value={keyInput} onChange={(e) => setKeyInput(e.target.value)}
                                 className="w-full bg-black border-2 border-zinc-700 p-2 text-xs text-green-400 mb-4 focus:outline-none focus:border-green-500 font-sans" />
                             <button onClick={saveKey} className="bg-green-600 px-6 py-2 text-xs font-bold hover:bg-green-500 border-2 border-black active:translate-y-1">SPEICHERN & START</button>
@@ -328,7 +333,9 @@
                         <div className="absolute inset-0 pointer-events-none p-5 flex flex-col justify-between z-50">
                             <div className="flex justify-between items-start">
                                 <div className="bg-black/60 p-2 border-b-2 border-r-2 border-zinc-700 text-[8px] max-w-[130px] backdrop-blur-sm overflow-hidden">
-                                    <div className="text-green-400 font-bold mb-1 tracking-tighter uppercase">Cloud_Bridge_v4.5</div>
+                                    <div className="text-green-400 font-bold mb-1 tracking-tighter uppercase flex items-center gap-1">
+                                        CLOUD_BRIDGE_V5 {loading && <span className="loader ml-1"></span>}
+                                    </div>
                                     <pre className="text-blue-300 leading-tight">{JSON.stringify(bridgeData, null, 1)}</pre>
                                 </div>
                                 <div className="text-right">
@@ -338,7 +345,7 @@
                             </div>
                             <div className="flex justify-between items-end">
                                 <div className="bg-black/60 p-3 border-t-2 border-r-2 border-zinc-700 max-w-[250px] backdrop-blur-sm">
-                                    <div className="text-[8px] text-zinc-500 uppercase font-bold italic mb-1">Macher_Status:</div>
+                                    <div className="text-[8px] text-zinc-500 uppercase font-bold italic mb-1">KI_Log:</div>
                                     <p className="text-[12px] text-white italic leading-tight">"{bridgeData.comment}"</p>
                                 </div>
                                 <ZapIcon />
@@ -348,13 +355,13 @@
                             <div className="absolute inset-0 bg-orange-600/30 flex items-center justify-center boiler-shake z-[100] backdrop-blur-sm">
                                 <div className="bg-white text-black p-10 border-8 border-black text-center -rotate-6 shadow-[15px_15px_0_#000]">
                                     <div className="text-6xl font-black text-center uppercase">Ok Boiler!</div>
-                                    <div className="text-2xl font-bold mt-3 text-center uppercase">Aura Overheat 67</div>
+                                    <div className="text-2xl font-bold mt-3 text-center uppercase tracking-widest">Aura Overheat 67</div>
                                 </div>
                             </div>
                         )}
                         {errorMessage && (
                             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-red-900/95 p-4 border-2 border-red-500 text-[9px] text-center pointer-events-auto max-w-xs z-[150]">
-                                <div className="font-bold mb-1 underline">API FEHLER:</div>
+                                <div className="font-bold mb-1 underline">SYSTEM FEHLER:</div>
                                 {errorMessage}
                                 <button onClick={(e) => { e.stopPropagation(); setErrorMessage(""); }} className="block mx-auto mt-2 underline uppercase text-[10px]">Schließen</button>
                             </div>
@@ -363,7 +370,7 @@
                 </div>
                 <div className="mt-8 flex gap-6">
                     <button onClick={() => setAudioEnabled(!audioEnabled)} className={`px-8 py-3 rounded-full font-bold shadow-2xl transition-all flex items-center gap-3 ${audioEnabled ? 'bg-green-600 hover:bg-green-500' : 'bg-red-600 hover:bg-red-500'}`}>
-                        <VolumeIcon enabled={audioEnabled} /> {audioEnabled ? 'SOUND AN' : 'SOUND AUS'}
+                        <VolumeIcon enabled={audioEnabled} /> {audioEnabled ? 'SOUND AN' : 'SOUND AUS (Klicken!)'}
                     </button>
                     <button onClick={() => { localStorage.removeItem("gemini_aura_key"); window.location.reload(); }} className="px-6 py-3 bg-zinc-800 border border-zinc-700 rounded-full text-[10px] font-bold hover:bg-zinc-700 transition-all uppercase tracking-widest">Key Reset</button>
                 </div>
