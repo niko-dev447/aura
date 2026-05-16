@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>67 Aura - Ultimate Masterpiece V8.4</title>
+    <title>67 Aura - Ultimate Masterpiece V8.5</title>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -101,7 +101,7 @@
         const [count, setCount] = useState(0);
         const [isBoiling, setIsBoiling] = useState(false);
         const [auraPoints, setAuraPoints] = useState(0);
-        const [bridgeData, setBridgeData] = useState({ status: "IDLE", rank: "Lauch", comment: "Bereit!" });
+        const [bridgeData, setBridgeData] = useState({ status: "IDLE", rank: "Lauch", comment: "Lobster lädt..." });
         const [loading, setLoading] = useState(false);
         const [audioEnabled, setAudioEnabled] = useState(false);
         const [errorMessage, setErrorMessage] = useState("");
@@ -131,49 +131,37 @@
                     const names = data.models
                         .filter(m => m.supportedGenerationMethods.includes("generateContent"))
                         .map(m => m.name.replace("models/", ""));
-                    setErrorMessage(`Modelle: ${names.slice(0,5).join(", ")} ...`);
-                } else {
-                    throw new Error("Keine Modelle gefunden.");
+                    setErrorMessage(`Verfügbare Modelle: ${names.slice(0,5).join(", ")}`);
                 }
-            } catch (e) {
-                setErrorMessage(`Fehler: ${e.message}`);
-            }
+            } catch (e) { setErrorMessage(`Fehler: ${e.message}`); }
             setLoading(false);
         };
 
         const callBridge = async (current) => {
             if (!apiKey) return;
             setLoading(true);
-            setErrorMessage("");
-            
-            // Wir nutzen nun das bestätigte Modell gemini-2.5-flash
-            const modelName = "gemini-2.5-flash";
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
-
             try {
+                const modelName = "gemini-2.5-flash";
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+
                 const response = await fetch(url, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        contents: [{ parts: [{ text: `Aura Check: ${current}. Antworte NUR JSON: {"status":"OK", "rank":"Macher", "comment":"Kurzer witziger Spruch auf Deutsch"}` }] }],
+                        contents: [{ parts: [{ text: `Aura Check: ${current}. Antworte NUR im JSON Format: {"status":"OK", "rank":"Macher", "comment":"Kurzer witziger Spruch auf Deutsch"}` }] }],
                         generationConfig: { responseMimeType: "application/json" }
                     })
                 });
 
-                if (!response.ok) {
-                    const errData = await response.json();
-                    throw new Error(errData.error?.message || `HTTP ${response.status}`);
+                if (response.ok) {
+                    const result = await response.json();
+                    const text = result.candidates[0].content.parts[0].text;
+                    const data = JSON.parse(text);
+                    setBridgeData(data);
+                    speak(data.comment);
                 }
-
-                const result = await response.json();
-                const text = result.candidates[0].content.parts[0].text;
-                const data = JSON.parse(text);
-                setBridgeData(data);
-                speak(data.comment);
-            } catch (e) {
-                console.error("Cloud Bridge Error:", e);
-                setBridgeData({status: "FAIL", rank: "N/A", comment: "Cloud Offline"});
-                setErrorMessage(`Fehler: ${e.message}`);
+            } catch (e) { 
+                setBridgeData({status: "FAIL", rank: "N/A", comment: "Cloud Offline"}); 
             }
             setLoading(false);
         };
@@ -182,84 +170,120 @@
         const lobsterGroup = useRef(null);
         const b6Ref = useRef(null);
         const b7Ref = useRef(null);
-        const rendererRef = useRef(null);
+        const animId = useRef(null);
 
         useEffect(() => {
             if (!containerRef.current) return;
             
-            // Verhindert doppelte Canvas-Erstellung
-            containerRef.current.innerHTML = '';
+            // Timeout hilft React beim Layouting
+            const timer = setTimeout(() => {
+                const width = containerRef.current.clientWidth;
+                const height = containerRef.current.clientHeight;
+                if (width === 0 || height === 0) return;
 
-            const scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x4dbbff);
-            const camera = new THREE.PerspectiveCamera(50, containerRef.current.clientWidth / containerRef.current.clientHeight, 0.1, 1000);
-            const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true });
-            renderer.setSize(containerRef.current.clientWidth, containerRef.current.clientHeight);
-            containerRef.current.appendChild(renderer.domElement);
-            rendererRef.current = renderer;
+                containerRef.current.innerHTML = '';
+                const scene = new THREE.Scene();
+                scene.background = new THREE.Color(0x4dbbff);
+                
+                const camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 1000);
+                const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true });
+                renderer.setSize(width, height);
+                containerRef.current.appendChild(renderer.domElement);
 
-            scene.add(new THREE.AmbientLight(0xffffff, 1.2));
-            const sun = new THREE.DirectionalLight(0xffffff, 1.0); sun.position.set(5, 15, 10); scene.add(sun);
+                scene.add(new THREE.AmbientLight(0xffffff, 1.2));
+                const sun = new THREE.DirectionalLight(0xffffff, 1.0);
+                sun.position.set(5, 15, 10);
+                scene.add(sun);
 
-            const cubeGeo = new THREE.BoxGeometry(1, 1, 1);
-            for (let x = -10; x <= 10; x++) {
-                for (let z = -6; z <= 6; z++) {
-                    const mat = new THREE.MeshLambertMaterial({ color: (x + z) % 2 === 0 ? 0x5aa351 : 0x4e8d46 });
-                    const block = new THREE.Mesh(cubeGeo, mat); block.position.set(x, -2.5, z); scene.add(block);
+                // Boden
+                const cubeGeo = new THREE.BoxGeometry(1, 1, 1);
+                for (let x = -10; x <= 10; x++) {
+                    for (let z = -6; z <= 6; z++) {
+                        const mat = new THREE.MeshLambertMaterial({ color: (x + z) % 2 === 0 ? 0x5aa351 : 0x4e8d46 });
+                        const block = new THREE.Mesh(cubeGeo, mat);
+                        block.position.set(x, -2.5, z);
+                        scene.add(block);
+                    }
                 }
-            }
 
-            const lobster = new THREE.Group();
-            const red = new THREE.MeshLambertMaterial({ color: 0xe63946 });
-            const body = new THREE.Mesh(new THREE.BoxGeometry(3.2, 1.6, 2.0), red); lobster.add(body);
-            for (let i = 1; i <= 4; i++) {
-                const s = new THREE.Mesh(new THREE.BoxGeometry(2.8 - i*0.4, 1.3 - i*0.1, 1.5), red);
-                s.position.set(0, -0.2, -0.8 - i*0.8); lobster.add(s);
-            }
-            const createEye = (x) => {
-                const g = new THREE.Group();
-                g.add(new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.7, 0.7), new THREE.MeshLambertMaterial({color: 0xffffff})));
-                const p = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.2), new THREE.MeshLambertMaterial({color: 0x000}));
-                p.position.z = 0.35; g.add(p); g.position.set(x, 1.4, 0.8); g.pupil = p; return g;
-            };
-            lobster.eL = createEye(-0.8); lobster.eR = createEye(0.8); lobster.add(lobster.eL, lobster.eR);
-            const createClaw = (side) => {
-                const g = new THREE.Group();
-                g.add(new THREE.Mesh(new THREE.BoxGeometry(1.0, 1.0, 1.5), red));
-                const p = new THREE.Mesh(new THREE.BoxGeometry(1.8, 1.1, 1.8), new THREE.MeshLambertMaterial({color: 0x9b2226}));
-                p.position.set(0, 0, 1.5); g.add(p); g.position.set(side * 3.2, 0.5, 0.8); return g;
-            };
-            lobster.armL = createClaw(-1); lobster.armR = createClaw(1); lobster.add(lobster.armL, lobster.armR);
-            lobster.position.set(0, -0.8, 0); scene.add(lobster); lobsterGroup.current = lobster;
-
-            const createBlock = (text) => {
-                const canvas = document.createElement('canvas'); canvas.width = 128; canvas.height = 128;
-                const ctx = canvas.getContext('2d'); ctx.fillStyle = 'white'; ctx.fillRect(0,0,128,128);
-                ctx.fillStyle = 'black'; ctx.font = 'bold 90px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-                ctx.fillText(text, 64, 64);
-                return new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.5, 1.5), new THREE.MeshLambertMaterial({map: new THREE.CanvasTexture(canvas)}));
-            };
-            b6Ref.current = createBlock("6"); b7Ref.current = createBlock("7");
-            scene.add(b6Ref.current, b7Ref.current);
-
-            camera.position.set(0, 3, 13); camera.lookAt(0, 1, 0);
-
-            const animate = () => {
-                const t = Date.now() * 0.002; requestAnimationFrame(animate);
-                if (lobsterGroup.current && !isBoiling) {
-                    lobsterGroup.current.position.y = Math.sin(t * 3.5) * 0.2 - 0.8;
-                    const spd = 2.8; const jX = Math.sin(t * spd) * 4.5; const jY = Math.abs(Math.cos(t * spd)) * 5.5 + 2;
-                    b6Ref.current.position.set(jX, jY, 3); b7Ref.current.position.set(-jX, Math.abs(Math.cos(t * spd + Math.PI)) * 5.5 + 2, 3);
-                    lobsterGroup.current.armL.rotation.x = Math.sin(t * spd) * 0.9; lobsterGroup.current.armR.rotation.x = Math.sin(t * spd + Math.PI) * 0.9;
-                } else if (isBoiling) {
-                    camera.position.x = (Math.random() - 0.5) * 0.6; lobsterGroup.current.rotation.y += 0.15;
+                // LOBSTER MODELL
+                const lobster = new THREE.Group();
+                const red = new THREE.MeshLambertMaterial({ color: 0xe63946 });
+                const darkRed = new THREE.MeshLambertMaterial({ color: 0x9b2226 });
+                
+                const body = new THREE.Mesh(new THREE.BoxGeometry(3.2, 1.6, 2.0), red);
+                lobster.add(body);
+                for (let i = 1; i <= 4; i++) {
+                    const s = new THREE.Mesh(new THREE.BoxGeometry(2.8 - i*0.4, 1.3 - i*0.1, 1.5), red);
+                    s.position.set(0, -0.2, -0.8 - i*0.8);
+                    lobster.add(s);
                 }
-                renderer.render(scene, camera);
-            };
-            animate();
+                const createEye = (x) => {
+                    const g = new THREE.Group();
+                    g.add(new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.7, 0.7), new THREE.MeshLambertMaterial({color: 0xffffff})));
+                    const p = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.2), new THREE.MeshLambertMaterial({color: 0x000}));
+                    p.position.z = 0.35; g.add(p);
+                    g.position.set(x, 1.4, 0.8); g.pupil = p;
+                    return g;
+                };
+                lobster.eL = createEye(-0.8); lobster.eR = createEye(0.8);
+                lobster.add(lobster.eL, lobster.eR);
+                const createClaw = (side) => {
+                    const g = new THREE.Group();
+                    g.add(new THREE.Mesh(new THREE.BoxGeometry(1.0, 1.0, 1.5), red));
+                    const p = new THREE.Mesh(new THREE.BoxGeometry(1.8, 1.1, 1.8), darkRed);
+                    p.position.set(0, 0, 1.5); g.add(p);
+                    g.position.set(side * 3.2, 0.5, 0.8);
+                    return g;
+                };
+                lobster.armL = createClaw(-1); lobster.armR = createClaw(1);
+                lobster.add(lobster.armL, lobster.armR);
+                
+                lobster.position.set(0, -0.8, 0);
+                scene.add(lobster);
+                lobsterGroup.current = lobster;
+
+                const createBlock = (text) => {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = 128; canvas.height = 128;
+                    const ctx = canvas.getContext('2d');
+                    ctx.fillStyle = 'white'; ctx.fillRect(0,0,128,128);
+                    ctx.fillStyle = 'black'; ctx.font = 'bold 90px Arial';
+                    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                    ctx.fillText(text, 64, 64);
+                    return new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.5, 1.5), new THREE.MeshLambertMaterial({map: new THREE.CanvasTexture(canvas)}));
+                };
+                b6Ref.current = createBlock("6"); b7Ref.current = createBlock("7");
+                scene.add(b6Ref.current, b7Ref.current);
+
+                camera.position.set(0, 3, 13);
+                camera.lookAt(0, 1, 0);
+
+                const animate = () => {
+                    const t = Date.now() * 0.002;
+                    animId.current = requestAnimationFrame(animate);
+                    if (lobsterGroup.current && !isBoiling) {
+                        lobsterGroup.current.position.y = Math.sin(t * 3.5) * 0.2 - 0.8;
+                        const spd = 2.8;
+                        const jX = Math.sin(t * spd) * 4.5;
+                        const jY = Math.abs(Math.cos(t * spd)) * 5.5 + 2;
+                        b6Ref.current.position.set(jX, jY, 3);
+                        b7Ref.current.position.set(-jX, Math.abs(Math.cos(t * spd + Math.PI)) * 5.5 + 2, 3);
+                        lobsterGroup.current.armL.rotation.x = Math.sin(t * spd) * 0.9;
+                        lobsterGroup.current.armR.rotation.x = Math.sin(t * spd + Math.PI) * 0.9;
+                    } else if (isBoiling) {
+                        camera.position.x = (Math.random() - 0.5) * 0.6;
+                        lobsterGroup.current.rotation.y += 0.15;
+                    }
+                    renderer.render(scene, camera);
+                };
+                animate();
+                setBridgeData(d => ({...d, comment: "Lobster ist bereit!"}));
+            }, 150);
+
             return () => {
-                renderer.dispose();
-                if (containerRef.current) containerRef.current.innerHTML = '';
+                clearTimeout(timer);
+                if (animId.current) cancelAnimationFrame(animId.current);
             };
         }, [isBoiling]);
 
@@ -294,7 +318,7 @@
 
                 <div className="mb-6 text-center select-none">
                     <h1 className="text-orange-500 text-3xl font-black tracking-widest uppercase">67 Aura Master</h1>
-                    <p className="text-[10px] opacity-40 uppercase">Voxel Engine V8.4 - Model: Gemini 2.5 Flash</p>
+                    <p className="text-[10px] opacity-40 uppercase">Voxel Engine V8.5 - Engine Stabilität: OK</p>
                 </div>
 
                 <div className="lilygo-case">
@@ -305,7 +329,7 @@
                             <div className="flex justify-between items-start">
                                 <div className="bg-black/60 p-2 border-b-2 border-r-2 border-zinc-700 text-[8px] max-w-[130px] backdrop-blur-sm">
                                     <div className="text-green-400 font-bold mb-1 tracking-tighter uppercase flex items-center gap-1">
-                                        BRIDGE_V8.4 {loading && <span className="loader ml-1"></span>}
+                                        BRIDGE_V8.5 {loading && <span className="loader ml-1"></span>}
                                     </div>
                                     <pre className="text-blue-300 overflow-hidden">{JSON.stringify(bridgeData, null, 1)}</pre>
                                 </div>
@@ -333,7 +357,7 @@
 
                         {errorMessage && (
                             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-red-900/95 p-5 border-2 border-red-500 text-[10px] text-center pointer-events-auto max-w-xs z-[150] shadow-2xl rounded-lg">
-                                <div className="font-bold underline text-white mb-2 uppercase italic tracking-widest">System-Info:</div>
+                                <div className="font-bold underline text-white mb-2 uppercase italic tracking-widest">Info:</div>
                                 <div className="text-white mb-4 leading-tight">{errorMessage}</div>
                                 <div className="flex flex-col gap-2">
                                     <button onClick={listModels} className="bg-white text-black py-2 rounded font-bold uppercase text-[8px] hover:bg-zinc-200">Refetch Models</button>
