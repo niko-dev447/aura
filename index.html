@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>67 Aura - Ultimate Masterpiece V8.3</title>
+    <title>67 Aura - Ultimate Masterpiece V8.4</title>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -105,9 +105,7 @@
         const [loading, setLoading] = useState(false);
         const [audioEnabled, setAudioEnabled] = useState(false);
         const [errorMessage, setErrorMessage] = useState("");
-        const [availableModels, setAvailableModels] = useState([]);
 
-        // Key aus LocalStorage (wird im UI abgefragt wenn leer)
         const [apiKey, setApiKey] = useState(() => localStorage.getItem("gemini_aura_key") || "");
         const [showKeyPrompt, setShowKeyPrompt] = useState(!localStorage.getItem("gemini_aura_key"));
 
@@ -123,7 +121,6 @@
             } catch (e) { console.error(e); }
         };
 
-        // --- MODEL DISCOVERY ---
         const listModels = async () => {
             if (!apiKey) return;
             setLoading(true);
@@ -134,13 +131,12 @@
                     const names = data.models
                         .filter(m => m.supportedGenerationMethods.includes("generateContent"))
                         .map(m => m.name.replace("models/", ""));
-                    setAvailableModels(names);
-                    setErrorMessage(`Verfügbare Modelle gefunden: ${names.join(", ")}`);
+                    setErrorMessage(`Modelle: ${names.slice(0,5).join(", ")} ...`);
                 } else {
-                    throw new Error("Keine Modelle in der Liste gefunden.");
+                    throw new Error("Keine Modelle gefunden.");
                 }
             } catch (e) {
-                setErrorMessage(`Modell-Liste fehlgeschlagen: ${e.message}`);
+                setErrorMessage(`Fehler: ${e.message}`);
             }
             setLoading(false);
         };
@@ -150,8 +146,8 @@
             setLoading(true);
             setErrorMessage("");
             
-            // Wir probieren gemini-1.5-flash (Standard)
-            const modelName = "gemini-1.5-flash";
+            // Wir nutzen nun das bestätigte Modell gemini-2.5-flash
+            const modelName = "gemini-2.5-flash";
             const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
             try {
@@ -159,7 +155,7 @@
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        contents: [{ parts: [{ text: `Aura Check: ${current}. Antworte NUR JSON: {status:string, rank:string, comment:string}` }] }],
+                        contents: [{ parts: [{ text: `Aura Check: ${current}. Antworte NUR JSON: {"status":"OK", "rank":"Macher", "comment":"Kurzer witziger Spruch auf Deutsch"}` }] }],
                         generationConfig: { responseMimeType: "application/json" }
                     })
                 });
@@ -186,15 +182,21 @@
         const lobsterGroup = useRef(null);
         const b6Ref = useRef(null);
         const b7Ref = useRef(null);
+        const rendererRef = useRef(null);
 
         useEffect(() => {
             if (!containerRef.current) return;
+            
+            // Verhindert doppelte Canvas-Erstellung
+            containerRef.current.innerHTML = '';
+
             const scene = new THREE.Scene();
             scene.background = new THREE.Color(0x4dbbff);
             const camera = new THREE.PerspectiveCamera(50, containerRef.current.clientWidth / containerRef.current.clientHeight, 0.1, 1000);
             const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true });
             renderer.setSize(containerRef.current.clientWidth, containerRef.current.clientHeight);
             containerRef.current.appendChild(renderer.domElement);
+            rendererRef.current = renderer;
 
             scene.add(new THREE.AmbientLight(0xffffff, 1.2));
             const sun = new THREE.DirectionalLight(0xffffff, 1.0); sun.position.set(5, 15, 10); scene.add(sun);
@@ -255,7 +257,10 @@
                 renderer.render(scene, camera);
             };
             animate();
-            return () => renderer.dispose();
+            return () => {
+                renderer.dispose();
+                if (containerRef.current) containerRef.current.innerHTML = '';
+            };
         }, [isBoiling]);
 
         const handleAction = () => {
@@ -280,7 +285,7 @@
                     <div className="absolute inset-0 bg-black/90 z-[200] flex flex-col items-center justify-center p-6 text-center">
                         <div className="bg-zinc-900 p-8 border-4 border-zinc-700 max-w-sm rounded-2xl shadow-2xl">
                             <h2 className="text-orange-500 text-xl font-black mb-4 uppercase">API Key benötigt</h2>
-                            <p className="text-[10px] text-zinc-400 mb-6">Bitte gib deinen Google Gemini API Key ein (lokal gespeichert).</p>
+                            <p className="text-[10px] text-zinc-400 mb-6 font-sans">Google Gemini API Key einfügen.</p>
                             <input id="key-in" type="password" placeholder="AIzaSy..." className="w-full bg-black border border-zinc-700 p-3 rounded mb-6 text-green-400 focus:outline-none focus:border-green-500 font-sans" />
                             <button onClick={() => saveKey(document.getElementById('key-in').value)} className="w-full bg-green-600 py-3 rounded font-bold hover:bg-green-500 transition-colors uppercase">Starten</button>
                         </div>
@@ -289,7 +294,7 @@
 
                 <div className="mb-6 text-center select-none">
                     <h1 className="text-orange-500 text-3xl font-black tracking-widest uppercase">67 Aura Master</h1>
-                    <p className="text-[10px] opacity-40 uppercase">Voxel Engine V8.3 & Model Discoverer</p>
+                    <p className="text-[10px] opacity-40 uppercase">Voxel Engine V8.4 - Model: Gemini 2.5 Flash</p>
                 </div>
 
                 <div className="lilygo-case">
@@ -300,7 +305,7 @@
                             <div className="flex justify-between items-start">
                                 <div className="bg-black/60 p-2 border-b-2 border-r-2 border-zinc-700 text-[8px] max-w-[130px] backdrop-blur-sm">
                                     <div className="text-green-400 font-bold mb-1 tracking-tighter uppercase flex items-center gap-1">
-                                        BRIDGE_V8.3 {loading && <span className="loader ml-1"></span>}
+                                        BRIDGE_V8.4 {loading && <span className="loader ml-1"></span>}
                                     </div>
                                     <pre className="text-blue-300 overflow-hidden">{JSON.stringify(bridgeData, null, 1)}</pre>
                                 </div>
@@ -328,10 +333,10 @@
 
                         {errorMessage && (
                             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-red-900/95 p-5 border-2 border-red-500 text-[10px] text-center pointer-events-auto max-w-xs z-[150] shadow-2xl rounded-lg">
-                                <div className="font-bold underline text-white mb-2 uppercase italic tracking-widest">Verbindungs-Fehler:</div>
+                                <div className="font-bold underline text-white mb-2 uppercase italic tracking-widest">System-Info:</div>
                                 <div className="text-white mb-4 leading-tight">{errorMessage}</div>
                                 <div className="flex flex-col gap-2">
-                                    <button onClick={listModels} className="bg-white text-black py-2 rounded font-bold uppercase text-[8px] hover:bg-zinc-200">Verfügbare Modelle suchen</button>
+                                    <button onClick={listModels} className="bg-white text-black py-2 rounded font-bold uppercase text-[8px] hover:bg-zinc-200">Refetch Models</button>
                                     <button onClick={() => setErrorMessage("")} className="underline uppercase text-white opacity-60 hover:opacity-100">Schließen</button>
                                 </div>
                             </div>
