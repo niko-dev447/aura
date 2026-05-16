@@ -67,7 +67,7 @@
             0% { transform: translate(-50.5%, -49.5%) rotate(-0.5deg); }
             100% { transform: translate(-49.5%, -50.5%) rotate(0.5deg); }
         }
-        /* Loading Spinner */
+        /* Lade-Animation */
         .loader {
             width: 12px;
             height: 12px;
@@ -144,8 +144,8 @@
             setLoading(true);
             setErrorMessage("");
             try {
-                // Wechsel auf Version v1 für maximale Key-Kompatibilität (kein 404 mehr)
-                const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+                // Zurück zu v1beta - das ist der stabilste Endpunkt für Free-Keys mit Flash
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
                 
                 const response = await fetch(url, {
                     method: 'POST',
@@ -153,9 +153,12 @@
                     body: JSON.stringify({
                         contents: [{ 
                             parts: [{ 
-                                text: `Du bist eine Cloud-Bridge. Antworte NUR im JSON Format. Aura Check: Counter=${current}. Antworte mit diesem JSON: {"status":"OK","rank":"Macher","comment":"Kurzer witziger Spruch auf Deutsch über 67 Aura und Krabben"}` 
+                                text: `Du bist eine Cloud-Bridge. Antworte NUR im JSON Format. Aura Check: Counter=${current}. Antworte mit diesem JSON (kein Markdown): {"status":"OK","rank":"Macher","comment":"Kurzer witziger Spruch auf Deutsch über 67 Aura und Krabben"}` 
                             }] 
-                        }]
+                        }],
+                        generationConfig: {
+                            responseMimeType: "application/json"
+                        }
                     })
                 });
 
@@ -167,7 +170,7 @@
                 const result = await response.json();
                 const textResponse = result.candidates[0].content.parts[0].text;
                 
-                // Robustes Parsing falls Markdown-Tags enthalten sind
+                // Parsing
                 const cleanJson = textResponse.replace(/```json|```/g, "").trim();
                 const data = JSON.parse(cleanJson);
                 
@@ -176,7 +179,7 @@
             } catch (e) { 
                 console.error("Cloud Bridge Error:", e);
                 setBridgeData({status: "OFFLINE", rank: "N/A", comment: "Verbindung fehlgeschlagen"});
-                setErrorMessage(`HTTP Error: ${e.message}`);
+                setErrorMessage(e.message);
             } finally {
                 setLoading(false);
             }
@@ -292,7 +295,6 @@
         const handleAction = () => {
             if (isBoiling || showKeyModal) return;
             const next = count + 1; setCount(next); setAuraPoints(p => p + 67);
-            // Cloud Bridge nur bei bestimmten Meilensteinen rufen
             if (next === 1 || next % 10 === 0 || next === 67) callBridge(next);
             
             if (next === 67) {
@@ -335,7 +337,7 @@
                             <div className="flex justify-between items-start">
                                 <div className="bg-black/60 p-2 border-b-2 border-r-2 border-zinc-700 text-[8px] max-w-[130px] backdrop-blur-sm overflow-hidden">
                                     <div className="text-green-400 font-bold mb-1 tracking-tighter uppercase flex items-center gap-1">
-                                        CLOUD_BRIDGE_V5.1 {loading && <span className="loader ml-1"></span>}
+                                        CLOUD_BRIDGE_V6.0 {loading && <span className="loader ml-1"></span>}
                                     </div>
                                     <pre className="text-blue-300 leading-tight">{JSON.stringify(bridgeData, null, 1)}</pre>
                                 </div>
@@ -362,9 +364,9 @@
                         )}
                         {errorMessage && (
                             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-red-900/95 p-4 border-2 border-red-500 text-[9px] text-center pointer-events-auto max-w-xs z-[150]">
-                                <div className="font-bold mb-1 underline">SYSTEM FEHLER:</div>
-                                {errorMessage}
-                                <button onClick={(e) => { e.stopPropagation(); setErrorMessage(""); }} className="block mx-auto mt-2 underline uppercase text-[10px]">Schließen</button>
+                                <div className="font-bold mb-1 underline text-white">SYSTEM FEHLER:</div>
+                                <div className="text-white mb-2">{errorMessage}</div>
+                                <button onClick={(e) => { e.stopPropagation(); setErrorMessage(""); }} className="block mx-auto mt-2 underline uppercase text-[10px] text-white">Schließen</button>
                             </div>
                         )}
                     </div>
