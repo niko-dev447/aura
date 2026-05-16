@@ -3,8 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>67 Aura - Ultimate Masterpiece V8.2</title>
-    <!-- Bibliotheken -->
+    <title>67 Aura - Ultimate Masterpiece V8.3</title>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -89,23 +88,11 @@
 <script type="text/babel">
     const { useState, useEffect, useRef } = React;
 
-    const ZapIcon = () => (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="yellow" strokeWidth="2">
-            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
-        </svg>
-    );
-
+    const ZapIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="yellow" strokeWidth="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>;
     const VolumeIcon = ({enabled}) => (
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
             <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
-            {enabled ? (
-                <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
-            ) : (
-                <g>
-                    <line x1="23" y1="9" x2="17" y2="15"/>
-                    <line x1="17" y1="9" x2="23" y2="15"/>
-                </g>
-            )}
+            {enabled ? <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/> : <g><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></g>}
         </svg>
     );
 
@@ -114,14 +101,15 @@
         const [count, setCount] = useState(0);
         const [isBoiling, setIsBoiling] = useState(false);
         const [auraPoints, setAuraPoints] = useState(0);
-        const [bridgeData, setBridgeData] = useState({ status: "BEREIT", rank: "Lauch", comment: "Klick auf den Lobster!" });
+        const [bridgeData, setBridgeData] = useState({ status: "IDLE", rank: "Lauch", comment: "Bereit!" });
         const [loading, setLoading] = useState(false);
         const [audioEnabled, setAudioEnabled] = useState(false);
         const [errorMessage, setErrorMessage] = useState("");
-        
+        const [availableModels, setAvailableModels] = useState([]);
+
+        // Key aus LocalStorage (wird im UI abgefragt wenn leer)
         const [apiKey, setApiKey] = useState(() => localStorage.getItem("gemini_aura_key") || "");
-        const [keyInput, setKeyInput] = useState("");
-        const [showKeyModal, setShowKeyModal] = useState(!localStorage.getItem("gemini_aura_key"));
+        const [showKeyPrompt, setShowKeyPrompt] = useState(!localStorage.getItem("gemini_aura_key"));
 
         const speak = (text) => {
             if (!audioEnabled || !text) return;
@@ -135,12 +123,34 @@
             } catch (e) { console.error(e); }
         };
 
+        // --- MODEL DISCOVERY ---
+        const listModels = async () => {
+            if (!apiKey) return;
+            setLoading(true);
+            try {
+                const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+                const data = await res.json();
+                if (data.models) {
+                    const names = data.models
+                        .filter(m => m.supportedGenerationMethods.includes("generateContent"))
+                        .map(m => m.name.replace("models/", ""));
+                    setAvailableModels(names);
+                    setErrorMessage(`Verfügbare Modelle gefunden: ${names.join(", ")}`);
+                } else {
+                    throw new Error("Keine Modelle in der Liste gefunden.");
+                }
+            } catch (e) {
+                setErrorMessage(`Modell-Liste fehlgeschlagen: ${e.message}`);
+            }
+            setLoading(false);
+        };
+
         const callBridge = async (current) => {
             if (!apiKey) return;
             setLoading(true);
             setErrorMessage("");
             
-            // Wechsel auf das stabilste Modell für kostenlose AI Studio Keys
+            // Wir probieren gemini-1.5-flash (Standard)
             const modelName = "gemini-1.5-flash";
             const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
@@ -149,14 +159,8 @@
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        contents: [{ 
-                            parts: [{ 
-                                text: `Du bist eine Snapy-Cloud-Bridge. Analysiere Minecraft Aura: Counter=${current}, Aura=${auraPoints}. Antworte ausschließlich in diesem JSON-Format: {"status":"OK","rank":"Macher","comment":"Kurzer witziger Spruch"}` 
-                            }] 
-                        }],
-                        generationConfig: { 
-                            responseMimeType: "application/json" 
-                        }
+                        contents: [{ parts: [{ text: `Aura Check: ${current}. Antworte NUR JSON: {status:string, rank:string, comment:string}` }] }],
+                        generationConfig: { responseMimeType: "application/json" }
                     })
                 });
 
@@ -166,19 +170,14 @@
                 }
 
                 const result = await response.json();
-                const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
-                
-                if (!text) throw new Error("Keine Antwort von der KI erhalten.");
-
-                const cleanJson = text.replace(/```json|```/gi, "").trim();
-                const data = JSON.parse(cleanJson);
-                
+                const text = result.candidates[0].content.parts[0].text;
+                const data = JSON.parse(text);
                 setBridgeData(data);
                 speak(data.comment);
             } catch (e) {
                 console.error("Cloud Bridge Error:", e);
                 setBridgeData({status: "FAIL", rank: "N/A", comment: "Cloud Offline"});
-                setErrorMessage(`Verbindung fehlgeschlagen: ${e.message}`);
+                setErrorMessage(`Fehler: ${e.message}`);
             }
             setLoading(false);
         };
@@ -187,155 +186,127 @@
         const lobsterGroup = useRef(null);
         const b6Ref = useRef(null);
         const b7Ref = useRef(null);
-        const rendererRef = useRef(null);
 
         useEffect(() => {
             if (!containerRef.current) return;
-            const timer = setTimeout(() => {
-                const width = containerRef.current.clientWidth;
-                const height = containerRef.current.clientHeight;
-                if (width === 0 || height === 0) return;
+            const scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x4dbbff);
+            const camera = new THREE.PerspectiveCamera(50, containerRef.current.clientWidth / containerRef.current.clientHeight, 0.1, 1000);
+            const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true });
+            renderer.setSize(containerRef.current.clientWidth, containerRef.current.clientHeight);
+            containerRef.current.appendChild(renderer.domElement);
 
-                const scene = new THREE.Scene();
-                scene.background = new THREE.Color(0x4dbbff);
-                const camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 1000);
-                const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true });
-                renderer.setSize(width, height);
-                containerRef.current.appendChild(renderer.domElement);
-                rendererRef.current = renderer;
+            scene.add(new THREE.AmbientLight(0xffffff, 1.2));
+            const sun = new THREE.DirectionalLight(0xffffff, 1.0); sun.position.set(5, 15, 10); scene.add(sun);
 
-                scene.add(new THREE.AmbientLight(0xffffff, 1.4));
-                const sun = new THREE.DirectionalLight(0xffffff, 1.0);
-                sun.position.set(10, 20, 15); scene.add(sun);
-
-                const cubeGeo = new THREE.BoxGeometry(1, 1, 1);
-                for (let x = -10; x <= 10; x++) {
-                    for (let z = -6; z <= 6; z++) {
-                        const mat = new THREE.MeshLambertMaterial({ color: (x + z) % 2 === 0 ? 0x5aa351 : 0x4e8d46 });
-                        const block = new THREE.Mesh(cubeGeo, mat);
-                        block.position.set(x, -2.5, z); scene.add(block);
-                    }
+            const cubeGeo = new THREE.BoxGeometry(1, 1, 1);
+            for (let x = -10; x <= 10; x++) {
+                for (let z = -6; z <= 6; z++) {
+                    const mat = new THREE.MeshLambertMaterial({ color: (x + z) % 2 === 0 ? 0x5aa351 : 0x4e8d46 });
+                    const block = new THREE.Mesh(cubeGeo, mat); block.position.set(x, -2.5, z); scene.add(block);
                 }
+            }
 
-                const lobster = new THREE.Group();
-                const red = new THREE.MeshLambertMaterial({ color: 0xe63946 });
-                const darkRed = new THREE.MeshLambertMaterial({ color: 0x9b2226 });
-                const body = new THREE.Mesh(new THREE.BoxGeometry(3.5, 1.8, 2.2), red);
-                lobster.add(body);
-                for (let i = 1; i <= 4; i++) {
-                    const s = new THREE.Mesh(new THREE.BoxGeometry(3.0 - i*0.4, 1.4 - i*0.1, 1.6), red);
-                    s.position.set(0, -0.2, -0.8 - i*0.8); lobster.add(s);
+            const lobster = new THREE.Group();
+            const red = new THREE.MeshLambertMaterial({ color: 0xe63946 });
+            const body = new THREE.Mesh(new THREE.BoxGeometry(3.2, 1.6, 2.0), red); lobster.add(body);
+            for (let i = 1; i <= 4; i++) {
+                const s = new THREE.Mesh(new THREE.BoxGeometry(2.8 - i*0.4, 1.3 - i*0.1, 1.5), red);
+                s.position.set(0, -0.2, -0.8 - i*0.8); lobster.add(s);
+            }
+            const createEye = (x) => {
+                const g = new THREE.Group();
+                g.add(new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.7, 0.7), new THREE.MeshLambertMaterial({color: 0xffffff})));
+                const p = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.2), new THREE.MeshLambertMaterial({color: 0x000}));
+                p.position.z = 0.35; g.add(p); g.position.set(x, 1.4, 0.8); g.pupil = p; return g;
+            };
+            lobster.eL = createEye(-0.8); lobster.eR = createEye(0.8); lobster.add(lobster.eL, lobster.eR);
+            const createClaw = (side) => {
+                const g = new THREE.Group();
+                g.add(new THREE.Mesh(new THREE.BoxGeometry(1.0, 1.0, 1.5), red));
+                const p = new THREE.Mesh(new THREE.BoxGeometry(1.8, 1.1, 1.8), new THREE.MeshLambertMaterial({color: 0x9b2226}));
+                p.position.set(0, 0, 1.5); g.add(p); g.position.set(side * 3.2, 0.5, 0.8); return g;
+            };
+            lobster.armL = createClaw(-1); lobster.armR = createClaw(1); lobster.add(lobster.armL, lobster.armR);
+            lobster.position.set(0, -0.8, 0); scene.add(lobster); lobsterGroup.current = lobster;
+
+            const createBlock = (text) => {
+                const canvas = document.createElement('canvas'); canvas.width = 128; canvas.height = 128;
+                const ctx = canvas.getContext('2d'); ctx.fillStyle = 'white'; ctx.fillRect(0,0,128,128);
+                ctx.fillStyle = 'black'; ctx.font = 'bold 90px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                ctx.fillText(text, 64, 64);
+                return new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.5, 1.5), new THREE.MeshLambertMaterial({map: new THREE.CanvasTexture(canvas)}));
+            };
+            b6Ref.current = createBlock("6"); b7Ref.current = createBlock("7");
+            scene.add(b6Ref.current, b7Ref.current);
+
+            camera.position.set(0, 3, 13); camera.lookAt(0, 1, 0);
+
+            const animate = () => {
+                const t = Date.now() * 0.002; requestAnimationFrame(animate);
+                if (lobsterGroup.current && !isBoiling) {
+                    lobsterGroup.current.position.y = Math.sin(t * 3.5) * 0.2 - 0.8;
+                    const spd = 2.8; const jX = Math.sin(t * spd) * 4.5; const jY = Math.abs(Math.cos(t * spd)) * 5.5 + 2;
+                    b6Ref.current.position.set(jX, jY, 3); b7Ref.current.position.set(-jX, Math.abs(Math.cos(t * spd + Math.PI)) * 5.5 + 2, 3);
+                    lobsterGroup.current.armL.rotation.x = Math.sin(t * spd) * 0.9; lobsterGroup.current.armR.rotation.x = Math.sin(t * spd + Math.PI) * 0.9;
+                } else if (isBoiling) {
+                    camera.position.x = (Math.random() - 0.5) * 0.6; lobsterGroup.current.rotation.y += 0.15;
                 }
-                const createEye = (x) => {
-                    const g = new THREE.Group();
-                    g.add(new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.8), new THREE.MeshLambertMaterial({color: 0xffffff})));
-                    const p = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.35, 0.2), new THREE.MeshLambertMaterial({color: 0x000000}));
-                    p.position.z = 0.45; g.add(p);
-                    g.position.set(x, 1.6, 1.0); g.pupil = p; return g;
-                };
-                lobster.eL = createEye(-0.9); lobster.eR = createEye(0.9);
-                lobster.add(lobster.eL, lobster.eR);
-                const createClaw = (side) => {
-                    const g = new THREE.Group();
-                    g.add(new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.2, 1.6), red));
-                    const p = new THREE.Mesh(new THREE.BoxGeometry(2.0, 1.2, 2.0), darkRed);
-                    p.position.set(0, 0, 1.6); g.add(p);
-                    g.position.set(side * 3.5, 0.5, 1.0); return g;
-                };
-                lobster.armL = createClaw(-1); lobster.armR = createClaw(1);
-                lobster.add(lobster.armL, lobster.armR);
-                lobster.position.set(0, -1.0, 0); lobster.scale.set(1.4, 1.4, 1.4);
-                scene.add(lobster); lobsterGroup.current = lobster;
-
-                const createBlock = (text) => {
-                    const canvas = document.createElement('canvas');
-                    canvas.width = 128; canvas.height = 128;
-                    const ctx = canvas.getContext('2d');
-                    ctx.fillStyle = 'white'; ctx.fillRect(0,0,128,128);
-                    ctx.fillStyle = 'black'; ctx.font = 'bold 90px Arial';
-                    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-                    ctx.fillText(text, 64, 64);
-                    return new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.6, 1.6), new THREE.MeshLambertMaterial({map: new THREE.CanvasTexture(canvas)}));
-                };
-                b6Ref.current = createBlock("6"); b7Ref.current = createBlock("7");
-                scene.add(b6Ref.current, b7Ref.current);
-
-                camera.position.set(0, 4, 12); camera.lookAt(0, 1, 0);
-
-                const animate = () => {
-                    const t = Date.now() * 0.002;
-                    requestAnimationFrame(animate);
-                    if (lobsterGroup.current && !isBoiling) {
-                        lobsterGroup.current.position.y = Math.sin(t * 3.5) * 0.2 - 1.0;
-                        const spd = 2.8;
-                        const jX = Math.sin(t * spd) * 4.8;
-                        const jY = Math.abs(Math.cos(t * spd)) * 6.0 + 2;
-                        b6Ref.current.position.set(jX, jY, 3);
-                        b6Ref.current.rotation.x += 0.05;
-                        b7Ref.current.position.set(-jX, Math.abs(Math.cos(t * spd + Math.PI)) * 6.0 + 2, 3);
-                        b7Ref.current.rotation.y += 0.05;
-                        lobsterGroup.current.armL.rotation.x = Math.sin(t * spd) * 0.9;
-                        lobsterGroup.current.armR.rotation.x = Math.sin(t * spd + Math.PI) * 0.9;
-                    } else if (isBoiling) {
-                        camera.position.x = (Math.random() - 0.5) * 0.8;
-                        lobsterGroup.current.rotation.y += 0.15;
-                    }
-                    renderer.render(scene, camera);
-                };
-                animate();
-            }, 100);
-            return () => { clearTimeout(timer); if(rendererRef.current) rendererRef.current.dispose(); };
+                renderer.render(scene, camera);
+            };
+            animate();
+            return () => renderer.dispose();
         }, [isBoiling]);
 
         const handleAction = () => {
-            if (isBoiling || showKeyModal) return;
+            if (isBoiling || showKeyPrompt) return;
             const next = count + 1; setCount(next); setAuraPoints(p => p + 67);
             if (next === 1 || next % 10 === 0 || next === 67) callBridge(next);
             if (next === 67) {
                 setIsBoiling(true);
-                setTimeout(() => { 
-                    setCount(0); setIsBoiling(false); setAuraPoints(0); 
-                    setBridgeData({status: "IDLE", rank: "Lauch", comment: "Neustart!"});
-                }, 7000);
+                setTimeout(() => { setCount(0); setIsBoiling(false); setAuraPoints(0); }, 7000);
             }
         };
 
-        const saveKey = () => {
-            if(keyInput.trim()) {
-                localStorage.setItem("gemini_aura_key", keyInput.trim());
-                setApiKey(keyInput.trim()); setShowKeyModal(false);
-                window.location.reload();
-            }
+        const saveKey = (key) => {
+            localStorage.setItem("gemini_aura_key", key);
+            setApiKey(key); setShowKeyPrompt(false);
+            window.location.reload();
         };
 
         return (
-            <div className="flex flex-col items-center relative">
-                {showKeyModal && (
-                    <div className="absolute inset-0 bg-black/95 z-[200] flex flex-col items-center justify-center p-6 rounded-[40px] border-4 border-zinc-700 text-center">
-                        <div className="bg-zinc-900 p-6 border-4 border-black max-w-sm shadow-[8px_8px_0_#000]">
-                            <h2 className="text-orange-500 font-bold mb-2 uppercase">API Key Aktivieren</h2>
-                            <p className="text-[10px] text-zinc-400 mb-4 font-sans">Kostenloser Key von aistudio.google.com benötigt.</p>
-                            <input type="password" placeholder="AIzaSy..." value={keyInput} onChange={(e) => setKeyInput(e.target.value)}
-                                className="w-full bg-black border-2 border-zinc-700 p-2 text-xs text-green-400 mb-4 focus:outline-none focus:border-green-500 font-sans" />
-                            <button onClick={saveKey} className="bg-green-600 px-6 py-2 text-xs font-bold hover:bg-green-500 border-2 border-black">STARTEN</button>
+            <div className="flex flex-col items-center">
+                {showKeyPrompt && (
+                    <div className="absolute inset-0 bg-black/90 z-[200] flex flex-col items-center justify-center p-6 text-center">
+                        <div className="bg-zinc-900 p-8 border-4 border-zinc-700 max-w-sm rounded-2xl shadow-2xl">
+                            <h2 className="text-orange-500 text-xl font-black mb-4 uppercase">API Key benötigt</h2>
+                            <p className="text-[10px] text-zinc-400 mb-6">Bitte gib deinen Google Gemini API Key ein (lokal gespeichert).</p>
+                            <input id="key-in" type="password" placeholder="AIzaSy..." className="w-full bg-black border border-zinc-700 p-3 rounded mb-6 text-green-400 focus:outline-none focus:border-green-500 font-sans" />
+                            <button onClick={() => saveKey(document.getElementById('key-in').value)} className="w-full bg-green-600 py-3 rounded font-bold hover:bg-green-500 transition-colors uppercase">Starten</button>
                         </div>
                     </div>
                 )}
+
+                <div className="mb-6 text-center select-none">
+                    <h1 className="text-orange-500 text-3xl font-black tracking-widest uppercase">67 Aura Master</h1>
+                    <p className="text-[10px] opacity-40 uppercase">Voxel Engine V8.3 & Model Discoverer</p>
+                </div>
+
                 <div className="lilygo-case">
-                    <div className="hw-btn btn-top" onClick={() => { localStorage.removeItem("gemini_aura_key"); window.location.reload(); }} title="Key Reset"></div>
+                    <div className="hw-btn btn-top" onClick={() => { localStorage.removeItem("gemini_aura_key"); window.location.reload(); }} title="Reset Key"></div>
                     <div className="screen" onClick={handleAction}>
                         <div ref={containerRef} className="w-full h-full" />
                         <div className="absolute inset-0 pointer-events-none p-5 flex flex-col justify-between z-50">
                             <div className="flex justify-between items-start">
-                                <div className="bg-black/60 p-2 border-b-2 border-r-2 border-zinc-700 text-[8px] max-w-[140px] backdrop-blur-sm overflow-hidden">
-                                    <div className="text-green-400 font-bold mb-1 uppercase flex items-center gap-1">
-                                        BRIDGE_V8.2 {loading && <span className="loader ml-1"></span>}
+                                <div className="bg-black/60 p-2 border-b-2 border-r-2 border-zinc-700 text-[8px] max-w-[130px] backdrop-blur-sm">
+                                    <div className="text-green-400 font-bold mb-1 tracking-tighter uppercase flex items-center gap-1">
+                                        BRIDGE_V8.3 {loading && <span className="loader ml-1"></span>}
                                     </div>
-                                    <pre className="text-blue-300 leading-tight">{JSON.stringify(bridgeData, null, 1)}</pre>
+                                    <pre className="text-blue-300 overflow-hidden">{JSON.stringify(bridgeData, null, 1)}</pre>
                                 </div>
                                 <div className="text-right">
                                     <div className={`text-6xl font-black drop-shadow-[5px_5px_0_#000] ${count >= 64 ? 'text-red-500 animate-pulse' : 'text-white'}`}>{count} / 64</div>
-                                    <div className="text-yellow-400 font-bold text-sm mt-1">AURA: {auraPoints.toLocaleString()}</div>
+                                    <div className="text-yellow-400 font-bold text-lg tracking-widest drop-shadow-[2px_2px_0_#000]">AURA: {auraPoints.toLocaleString()}</div>
                                 </div>
                             </div>
                             <div className="flex justify-between items-end">
@@ -345,28 +316,33 @@
                                 <ZapIcon />
                             </div>
                         </div>
+
                         {isBoiling && (
                             <div className="absolute inset-0 bg-orange-600/30 flex items-center justify-center boiler-shake z-[100] backdrop-blur-sm">
-                                <div className="bg-white text-black p-10 border-8 border-black text-center shadow-[15px_15px_0_#000]">
-                                    <div className="text-6xl font-black uppercase">Ok Boiler!</div>
-                                    <div className="text-2xl font-bold mt-3 uppercase tracking-widest text-center">Overheat 67</div>
+                                <div className="bg-white text-black p-10 border-8 border-black text-center -rotate-6 shadow-[15px_15px_0_#000]">
+                                    <div className="text-6xl font-black">OK BOILER!</div>
+                                    <div className="text-2xl font-bold mt-3">AURA OVERHEAT 67</div>
                                 </div>
                             </div>
                         )}
+
                         {errorMessage && (
-                            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-red-900/95 p-4 border-2 border-red-500 text-[8px] text-center pointer-events-auto max-w-xs z-[150] overflow-y-auto max-h-[120px]">
-                                <div className="font-bold underline text-white mb-2 uppercase italic">Cloud-Status:</div>
-                                <div className="text-white mb-2 text-[8px] leading-tight">{errorMessage}</div>
-                                <button onClick={(e) => { e.stopPropagation(); setErrorMessage(""); }} className="block mx-auto mt-2 underline uppercase text-[10px] text-white">Schließen</button>
+                            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-red-900/95 p-5 border-2 border-red-500 text-[10px] text-center pointer-events-auto max-w-xs z-[150] shadow-2xl rounded-lg">
+                                <div className="font-bold underline text-white mb-2 uppercase italic tracking-widest">Verbindungs-Fehler:</div>
+                                <div className="text-white mb-4 leading-tight">{errorMessage}</div>
+                                <div className="flex flex-col gap-2">
+                                    <button onClick={listModels} className="bg-white text-black py-2 rounded font-bold uppercase text-[8px] hover:bg-zinc-200">Verfügbare Modelle suchen</button>
+                                    <button onClick={() => setErrorMessage("")} className="underline uppercase text-white opacity-60 hover:opacity-100">Schließen</button>
+                                </div>
                             </div>
                         )}
                     </div>
                 </div>
+
                 <div className="mt-8 flex gap-6">
                     <button onClick={() => setAudioEnabled(!audioEnabled)} className={`px-8 py-3 rounded-full font-bold shadow-2xl transition-all flex items-center gap-3 ${audioEnabled ? 'bg-green-600 hover:bg-green-500' : 'bg-red-600 hover:bg-red-500'}`}>
                         <VolumeIcon enabled={audioEnabled} /> {audioEnabled ? 'SOUND AN' : 'SOUND AUS'}
                     </button>
-                    <button onClick={() => { localStorage.removeItem("gemini_aura_key"); window.location.reload(); }} className="px-6 py-3 bg-zinc-800 border border-zinc-700 rounded-full text-[10px] font-bold hover:bg-zinc-700 transition-all uppercase tracking-widest">Reset Key</button>
                 </div>
             </div>
         );
