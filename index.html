@@ -144,8 +144,8 @@
             setLoading(true);
             setErrorMessage("");
             try {
-                // Nutzung des Standardmodells für maximale Kompatibilität
-                const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+                // Wechsel auf Version v1 für maximale Key-Kompatibilität (kein 404 mehr)
+                const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
                 
                 const response = await fetch(url, {
                     method: 'POST',
@@ -153,29 +153,30 @@
                     body: JSON.stringify({
                         contents: [{ 
                             parts: [{ 
-                                text: `Aura Check: Counter=${current}. Antworte NUR im JSON Format: {"status":"OK","rank":"Macher","comment":"Kurzer witziger Spruch"}` 
+                                text: `Du bist eine Cloud-Bridge. Antworte NUR im JSON Format. Aura Check: Counter=${current}. Antworte mit diesem JSON: {"status":"OK","rank":"Macher","comment":"Kurzer witziger Spruch auf Deutsch über 67 Aura und Krabben"}` 
                             }] 
-                        }],
-                        generationConfig: { 
-                            responseMimeType: "application/json"
-                        }
+                        }]
                     })
                 });
 
                 if (!response.ok) {
                     const err = await response.json();
-                    throw new Error(err.error?.message || "Cloud Verbindung fehlgeschlagen");
+                    throw new Error(err.error?.message || `Fehler ${response.status}`);
                 }
 
                 const result = await response.json();
                 const textResponse = result.candidates[0].content.parts[0].text;
-                const data = JSON.parse(textResponse);
+                
+                // Robustes Parsing falls Markdown-Tags enthalten sind
+                const cleanJson = textResponse.replace(/```json|```/g, "").trim();
+                const data = JSON.parse(cleanJson);
                 
                 setBridgeData(data);
                 speak(data.comment);
             } catch (e) { 
                 console.error("Cloud Bridge Error:", e);
-                setBridgeData({status: "OFFLINE", rank: "N/A", comment: "Cloud konnte nicht erreicht werden."});
+                setBridgeData({status: "OFFLINE", rank: "N/A", comment: "Verbindung fehlgeschlagen"});
+                setErrorMessage(`HTTP Error: ${e.message}`);
             } finally {
                 setLoading(false);
             }
@@ -334,7 +335,7 @@
                             <div className="flex justify-between items-start">
                                 <div className="bg-black/60 p-2 border-b-2 border-r-2 border-zinc-700 text-[8px] max-w-[130px] backdrop-blur-sm overflow-hidden">
                                     <div className="text-green-400 font-bold mb-1 tracking-tighter uppercase flex items-center gap-1">
-                                        CLOUD_BRIDGE_V5 {loading && <span className="loader ml-1"></span>}
+                                        CLOUD_BRIDGE_V5.1 {loading && <span className="loader ml-1"></span>}
                                     </div>
                                     <pre className="text-blue-300 leading-tight">{JSON.stringify(bridgeData, null, 1)}</pre>
                                 </div>
